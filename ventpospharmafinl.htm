@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard POS - Farmacia Pro</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- JsBarcode (CDN para generar códigos de barras) -->
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+
+    <style>
+        *{ -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none; }
+        body { background-color: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; overflow-x: hidden; overflow-y: hidden; }
+        #login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; background-color: #0d6efd; background-image: linear-gradient(145deg, #0d6efd 0%, #0d47a1 100%); }
+        .login-card { max-width: 400px; width: 100%; box-shadow: 0 8px 24px rgba(0,0,0,.15); }
+        #toggle-password { cursor: pointer; }
+        #dashboard-container { display: none; }
+        .navbar { box-shadow: 0 2px 4px rgba(0,0,0,.1); }
+        .card { border: none; border-radius: 0.75rem; box-shadow: 0 4px 12px rgba(0,0,0,.08); }
+        .card-header { background-color: #ffffff; border-bottom: 1px solid #dee2e6; font-weight: 600; padding: 1rem 1.5rem; }
+        .nav-pills .nav-link.active { background-color: #0d6efd; }
+        .nav-pills .nav-link { color: #495057; }
+        .modal-header { background-color: #0d6efd; color: white; }
+        .stock-low { background-color: #fff3cd; color: #664d03; font-weight: bold; }
+        .stock-normal { background-color: #d1e7dd; color: #0f5132; }
+        .table-img { width: 50px; height: 50px; object-fit: cover; border-radius: 0.25rem; border: 1px solid #dee2e6; }
+        .img-preview-container { display: flex; align-items: center; justify-content: center; height: 180px; border: 1px dashed #ddd; border-radius: 4px; margin-top: 10px; padding: 5px; background-color: #f8f9fa; }
+        #medicine-image-preview { max-height: 100%; max-width: 100%; object-fit: contain; }
+        .pos-main-container { height: calc(100vh - 80px); }
+        #pos-product-list-container { height: 100%; overflow-y: auto; }
+        #pos-product-list { padding-right: 10px; }
+        .pos-product-card { cursor: pointer; transition: transform 0.2s ease, box-shadow 0.2s ease; }
+        .pos-product-card:hover { transform: scale(1.03); box-shadow: 0 8px 16px rgba(0,0,0,.1); }
+        .pos-product-card .card-img-top { width: 100%; height: 120px; object-fit: cover; }
+        .pos-product-card.out-of-stock { opacity: 0.5; cursor: not-allowed; }
+        .pos-product-card.out-of-stock:hover { transform: none; box-shadow: none; }
+        .pos-product-card .stock-badge { position: absolute; top: 10px; right: 10px; }
+        .pos-product-card .expiry-badge { position: absolute; top: 10px; left: 10px; font-size: 1.2rem; filter: drop-shadow(0 0 1px white); }
+        #pos-cart-items { min-height: 200px; max-height: calc(100vh - 420px); overflow-y: auto; }
+        .qty-input { width: 50px; text-align: center; border: 1px solid #ced4da; border-radius: .25rem; }
+        #invoice-content { font-family: 'Courier New', Courier, monospace; color: #000; }
+        .invoice-table { width: 100%; border-collapse: collapse; }
+        .invoice-table th, .invoice-table td { padding: 5px; border-bottom: 1px dashed #999; }
+        .invoice-table th { text-align: left; }
+        .text-right { text-align: right; }
+        #confirm-payment-btn .spinner-border { display: none; }
+        #confirm-payment-btn.processing .spinner-border { display: inline-block; }
+        #confirm-payment-btn.processing .btn-text { display: none; }
+        @media print {
+            body * { visibility: hidden; }
+            .modal-backdrop { display: none !important; }
+            #invoice-modal .modal-dialog { max-width: 100% !important; margin: 0 !important; }
+            #invoice-content, #invoice-content * { visibility: visible; }
+            #invoice-content { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- --- PANTALLA DE LOGIN --- -->
+    <div id="login-container">
+        <div class="card login-card p-4">
+            <div class="card-body">
+                <h3 class="card-title text-center mb-4"><i class="bi bi-capsule-pill me-2"></i>Farmacia Pro</h3>
+                <form id="login-form">
+                    <div id="login-alert" class="alert alert-danger d-none" role="alert">RUT o contraseña incorrectos.</div>
+                    <div class="mb-3">
+                        <label for="rut" class="form-label">RUT de Usuario</label>
+                        <input type="text" class="form-control" id="rut" placeholder="12.345.678-9" required autocomplete="off">
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Contraseña</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="password" required>
+                            <span class="input-group-text" id="toggle-password"><i class="bi bi-eye-slash-fill"></i></span>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Iniciar Sesión</button>
+                    <button type="button" class="btn btn-secondary w-100 mt-2 d-none" id="add-first-admin-btn">Crear Usuario Administrador Inicial</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- --- DASHBOARD PRINCIPAL --- -->
+    <div id="dashboard-container">
+        <nav class="navbar navbar-expand-lg navbar-light bg-white sticky-top">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#"><i class="bi bi-capsule-pill"></i> <strong>Farmacia Pro</strong></a>
+                <div class="d-flex align-items-center ms-auto">
+                    <span class="navbar-text me-3" id="user-greeting"></span>
+                    <button class="btn btn-outline-danger" id="logout-btn"><i class="bi bi-box-arrow-right me-1"></i> Cerrar Sesión</button>
+                </div>
+            </div>
+        </nav>
+
+        <main class="container-fluid mt-4">
+            <div class="row">
+                <!-- Menú Lateral -->
+                <div class="col-md-2">
+                    <div class="nav flex-column nav-pills" role="tablist">
+                        <button class="nav-link active" data-bs-toggle="pill" data-bs-target="#v-pills-pos" type="button"><i class="bi bi-cart4 me-2"></i>POS Venta</button>
+                        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-pills-sales-history" type="button"><i class="bi bi-clock-history me-2"></i>Historial de Ventas</button>
+                        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-pills-medicines" type="button"><i class="bi bi-table me-2"></i>Inventario</button>
+                        <button class="nav-link" data-bs-toggle="pill" data-bs-target="#v-pills-pharmacists" type="button"><i class="bi bi-person-badge me-2"></i>Farmacéuticos</button>
+                    </div>
+                </div>
+
+                <!-- Contenido Principal -->
+                <div class="col-md-10">
+                    <div class="tab-content">
+                        
+                        <!-- PESTAÑA 1: POS VENTA -->
+                        <div class="tab-pane fade show active" id="v-pills-pos" role="tabpanel">
+                            <div class="row pos-main-container">
+                                <div class="col-lg-7">
+                                    <div class="mb-3">
+                                        <input type="search" id="pos-search" class="form-control" placeholder="Buscar medicamento por nombre..." list="medicine-list">
+                                        <datalist id="medicine-list"></datalist>
+                                    </div>
+                                    <div id="pos-product-list-container"><div id="pos-product-list" class="row row-cols-2 row-cols-md-3 row-cols-xl-4 g-3"></div></div>
+                                </div>
+                                <div class="col-lg-5">
+                                    <div class="card h-100">
+                                        <div class="card-header"><h5 class="mb-0">Boleta Actual</h5></div>
+                                        <div class="card-body d-flex flex-column">
+                                            <div id="no-pharmacist-alert" class="alert alert-warning d-none" role="alert"><i class="bi bi-exclamation-triangle-fill"></i> <strong>Atención:</strong> No hay vendedores registrados. No se pueden procesar ventas.</div>
+                                            <ul id="pos-cart-items" class="list-group list-group-flush mb-3"></ul>
+                                            <div class="mt-auto">
+                                                <div class="d-flex justify-content-between"><span>Subtotal:</span> <span id="pos-subtotal">$0</span></div>
+                                                <div class="d-flex justify-content-between"><span>IVA (19%):</span> <span id="pos-tax">$0</span></div>
+                                                <hr>
+                                                <h4 class="d-flex justify-content-between"><span>Total:</span> <strong id="pos-total">$0</strong></h4>
+                                                <div class="d-grid gap-2 mt-3">
+                                                    <button class="btn btn-success btn-lg" id="process-sale-btn">Procesar Venta</button>
+                                                    <button class="btn btn-danger" id="cancel-sale-btn">Cancelar</button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PESTAÑA 2: HISTORIAL DE VENTAS -->
+                        <div class="tab-pane fade" id="v-pills-sales-history" role="tabpanel">
+                            <div class="card">
+                                <div class="card-header"><span>Historial de Ventas</span></div>
+                                <div class="card-body">
+                                    <div class="accordion" id="sales-history-accordion"></div>
+                                    <p id="no-sales-message" class="text-center text-muted d-none">Aún no se han registrado ventas.</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PESTAÑA 3: INVENTARIO DE MEDICAMENTOS -->
+                        <div class="tab-pane fade" id="v-pills-medicines" role="tabpanel">
+                            <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center"><span>Inventario de Medicamentos</span><button class="btn btn-primary" id="add-medicine-btn"><i class="bi bi-plus-circle me-1"></i> Añadir Medicamento</button></div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle">
+                                            <thead><tr><th>Imagen</th><th>Nombre y Datos</th><th>Stock</th><th>Tipo Receta</th><th>Vencimiento</th><th>Precio</th><th>Acciones</th></tr></thead>
+                                            <tbody id="medicines-table-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- PESTAÑA 4: GESTIÓN DE FARMACÉUTICOS -->
+                        <div class="tab-pane fade" id="v-pills-pharmacists" role="tabpanel">
+                             <div class="card">
+                                <div class="card-header d-flex justify-content-between align-items-center"><span>Gestión de Farmacéuticos</span><button class="btn btn-primary" id="add-pharmacist-btn"><i class="bi bi-person-plus me-1"></i> Añadir Farmacéutico</button></div>
+                                <div class="card-body">
+                                    <div class="table-responsive">
+                                        <table class="table table-hover align-middle">
+                                            <thead><tr><th>ID</th><th>RUT</th><th>Nombre</th><th>Apellido</th><th>Acciones</th></tr></thead>
+                                            <tbody id="pharmacists-table-body"></tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- --- NOTIFICACIONES TOAST --- -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="app-toast" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex"><div class="toast-body" id="toast-body"></div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>
+        </div>
+    </div>
+
+    <!-- --- MODALES --- -->
+
+    <!-- Modal para Medicamentos (CRUD) -->
+    <div class="modal fade" id="medicine-modal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title" id="medicine-modal-title"></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <form id="medicine-form" novalidate>
+                        <input type="hidden" id="medicine-id"><div class="row">
+                            <div class="col-md-8">
+                                <div class="mb-3"><label class="form-label">Nombre del Medicamento</label><input type="text" class="form-control" id="medicine-name" required autocomplete="off"></div>
+                                <div class="mb-3"><label class="form-label">Dosis (ej. 500mg)</label><input type="text" class="form-control" id="medicine-dosage"  autocomplete="off"></div>
+                                <div class="row"><div class="col-md-4 mb-3"><label class="form-label">Stock</label><input type="number" class="form-control" id="medicine-stock" required min="0"></div><div class="col-md-4 mb-3"><label class="form-label">Precio</label><input type="number" class="form-control" id="medicine-price" required min="0" step="0.01"></div><div class="col-md-4 mb-3"><label class="form-label">Vencimiento</label><input type="date" class="form-control" id="medicine-expiry" required></div></div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3"><label class="form-label">Laboratorio</label><input type="text" class="form-control" id="medicine-lab" required autocomplete="off"></div>
+                                    <div class="col-md-6 mb-3"><label class="form-label">País de Origen</label><select class="form-select" id="medicine-country" required></select></div>
+                                </div>
+                                <div class="mb-3"><label class="form-label">Registro Sanitario</label><input type="text" class="form-control" id="medicine-sanitary-reg" required autocomplete="off"></div>
+                                <div class="row"><div class="col-md-6 mb-3"><label class="form-label">Tipo de Receta</label><select id="medicine-recipe" class="form-select" required></select></div><div class="col-md-6 mb-3"><label class="form-label">Vía de Administración</label><select id="medicine-route" class="form-select" required></select></div></div>
+                                <div class="mb-3"><label class="form-label">Descripción</label><textarea class="form-control" id="medicine-description" rows="2" style="resize: none;"></textarea></div>
+                                <div class="mb-3"><label class="form-label">Reacciones Adversas Medicamentosas (RAM)</label><textarea class="form-control" id="medicine-ram" rows="2" style="resize: none;"></textarea></div>
+                            </div>
+                            <div class="col-md-4 text-center">
+                                <label class="form-label">Imagen del Medicamento</label><input type="file" class="form-control" id="medicine-image-input" accept="image/*"><div class="img-preview-container"><img id="medicine-image-preview" src="" alt="Vista previa"></div>
+                            </div>
+                        </div>
+                        <div class="modal-footer mt-3 border-top pt-3"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar Cambios</button></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Farmacéuticos (CRUD) -->
+    <div class="modal fade" id="pharmacist-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title" id="pharmacist-modal-title"></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <form id="pharmacist-form" novalidate>
+                        <input type="hidden" id="pharmacist-id">
+                        <div class="mb-3"><label class="form-label">RUT (con dígito verificador)</label><input type="text" class="form-control" id="pharmacist-rut" required placeholder="12.345.678-9" autocomplete="off"></div>
+                        <div class="mb-3"><label class="form-label">Nombre</label><input type="text" class="form-control" id="pharmacist-name" required autocomplete="off"></div>
+                        <div class="mb-3"><label class="form-label">Apellido</label><input type="text" class="form-control" id="pharmacist-lastName" required autocomplete="off"></div>
+                        <div class="mb-3"><label class="form-label">Contraseña</label><input type="password" class="form-control" id="pharmacist-password"></div>
+                        <div class="modal-footer border-top pt-3"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary">Guardar Cambios</button></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Modal de Métodos de Pago (POS) -->
+    <div class="modal fade" id="payment-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header"><h5 class="modal-title">Finalizar Venta</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <p class="lead">Total a pagar: <strong id="payment-total-amount"></strong></p>
+                    <div class="mb-3"><label for="seller-select" class="form-label">Vendedor</label><select class="form-select" id="seller-select" required></select></div>
+                    <h6>Método de Pago</h6>
+                    <div class="d-grid gap-2" id="payment-options">
+                        <button class="btn btn-outline-primary" data-method="Efectivo"><i class="bi bi-cash-coin me-2"></i>Efectivo</button>
+                        <button class="btn btn-outline-primary" data-method="Tarjeta de Débito"><i class="bi bi-credit-card me-2"></i>Tarjeta de Débito</button>
+                        <button class="btn btn-outline-primary" data-method="Tarjeta de Crédito"><i class="bi bi-credit-card-2-front-fill me-2"></i>Tarjeta de Crédito</button>
+                    </div>
+                    <div id="cash-payment-section" class="mt-3 d-none"><hr><div class="mb-3"><label for="cash-amount" class="form-label">Monto Pagado</label><input type="number" class="form-control" id="cash-amount" placeholder="Ingrese efectivo"></div><h5>Vuelto: <span id="change-amount">$0.00</span></h5></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="button" class="btn btn-success" id="confirm-payment-btn" disabled>
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span class="btn-text">Confirmar Pago</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Boleta/Factura (POS) -->
+    <div class="modal fade" id="invoice-modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header no-print"><h5 class="modal-title">Boleta de Venta</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body" id="invoice-content">
+                    <div class="text-center"><h4>Farmacia Pro</h4><p class="mb-0">Boleta de Venta</p><p class="mb-0" id="invoice-date"></p><p>Transacción #<span id="invoice-tx-id"></span></p></div><hr>
+                    <p>Atendido por: <span id="invoice-pharmacist"></span></p><hr>
+                    <table class="invoice-table"><thead><tr><th>Producto</th><th>Cant.</th><th class="text-right">Total</th></tr></thead><tbody id="invoice-items"></tbody></table><hr>
+                    <div id="invoice-summary"><p class="d-flex justify-content-between"><span>Subtotal:</span> <span id="invoice-subtotal"></span></p><p class="d-flex justify-content-between"><span>IVA (19%):</span> <span id="invoice-tax"></span></p><h5 class="d-flex justify-content-between"><span>TOTAL:</span> <span id="invoice-total"></span></h5></div>
+                    <div id="invoice-cash-details" class="d-none"><hr><p class="d-flex justify-content-between"><span>Efectivo Pagado:</span> <span id="invoice-cash-paid"></span></p><p class="d-flex justify-content-between"><span>Vuelto:</span> <span id="invoice-change"></span></p></div>
+                    <hr><p>Método de Pago: <span id="invoice-payment-method"></span></p>
+                    <div class="text-center mt-3"><svg id="barcode"></svg><p class="mt-2">¡Gracias por su compra!</p></div>
+                </div>
+                <div class="modal-footer no-print"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button><button type="button" class="btn btn-primary" id="print-invoice-btn"><i class="bi bi-printer-fill me-1"></i> Imprimir</button></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- --- SCRIPTS JS --- -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        $(document).on('dragstart', 'img', function(evt) {
+            evt.preventDefault();
+        });
+    $(document).ready(function() {
+        
+        // --- CONSTANTES Y ESTADO ---
+        let db, medicineModal, pharmacistModal, appToast, paymentModal, invoiceModal;
+        let posCart = [], pharmacistCount = 0, selectedPaymentMethod = null, cashPaymentDetails = {};
+        const DB_NAME = 'FarmaciaProDB', DB_VERSION = 8;
+        const MEDICINE_STORE = 'medicines', PHARMACIST_STORE = 'pharmacists', SALES_STORE = 'sales';
+        const recipeTypes = ["Sin Receta Médica", "Receta Médica Simple", "Receta Retenida", "Receta Médica Cheque"];
+        const adminRoutes = { "Vías Enterales": ["Oral (VO)", "Sublingual", "Rectal", "Por Sonda"], "Vías Parenterales": ["Intravenosa (IV)", "Intramuscular (IM)", "Subcutánea (SC)", "Intradérmica"], "Vías Tópicas": ["Cutánea/Dermatológica", "Oftálmica", "Ótica", "Nasal", "Vaginal", "Transdérmica"], "Vía Respiratoria": ["Inhalatoria/Nebulización"] };
+        
+        // Objeto para mapear países a códigos ISO para las banderas
+        const countryToCodeMap = { 'Alemania': 'de', 'Argentina': 'ar', 'Australia': 'au', 'Bélgica': 'be', 'Brasil': 'br', 'Canadá': 'ca', 'Chile': 'cl', 'China': 'cn', 'Colombia': 'co', 'Corea del Sur': 'kr', 'Dinamarca': 'dk', 'España': 'es', 'Estados Unidos': 'us', 'Francia': 'fr', 'India': 'in', 'Irlanda': 'ie', 'Israel': 'il', 'Italia': 'it', 'Japón': 'jp', 'México': 'mx', 'Países Bajos': 'nl', 'Reino Unido': 'gb', 'Suecia': 'se', 'Suiza': 'ch' };
+
+        // --- HELPERS ---
+        const capitalizeWords = str => str ? str.toLowerCase().split(' ').map(word => word.charAt(0).toUpperCase() + word.substring(1)).join(' ') : '';
+        const formatAndValidateRut = (rut) => { let valor = rut.replace(/[^0-9kK]/g, '').toUpperCase(); let cuerpo = valor.slice(0, -1); let dv = valor.slice(-1); if(cuerpo.length < 7) return { isValid: false, formatted: valor }; let suma = 0, multiplo = 2; for(let i = cuerpo.length - 1; i >= 0; i--) { suma += parseInt(cuerpo.charAt(i)) * multiplo; if(multiplo < 7) multiplo++; else multiplo = 2; } const dvEsperado = 11 - (suma % 11); const dvFinal = (dvEsperado === 11) ? '0' : (dvEsperado === 10) ? 'K' : dvEsperado.toString(); let rutFormateado = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.') + '-' + dv; return { isValid: dvFinal === dv, formatted: rutFormateado }; };
+        const formatFullDate = (date) => { const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado']; const months = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']; return `${days[date.getDay()]} ${date.getDate()} de ${months[date.getMonth()]} del ${date.getFullYear()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`; };
+
+        // --- LOGIN Y SESIÓN ---
+        if (sessionStorage.getItem('isLoggedIn') === 'true') { $('#login-container').hide(); $('#dashboard-container').show(); initApp(); } else { initDB(); }
+        $('#login-form').on('submit', function(e) { e.preventDefault(); const rutInput = $('#rut').val(); const password = $('#password').val(); const { formatted } = formatAndValidateRut(rutInput); const request = db.transaction([PHARMACIST_STORE]).objectStore(PHARMACIST_STORE).index('rut').get(formatted); request.onsuccess = () => { const user = request.result; if (user && user.password === password) { sessionStorage.setItem('isLoggedIn', 'true'); sessionStorage.setItem('loggedInUser', `${user.name} ${user.lastName}`); sessionStorage.setItem('welcomeToast', `¡Bienvenido, ${user.name}!`); location.reload(); } else { $('#login-alert').removeClass('d-none'); } }; request.onerror = () => showToast('Error al buscar usuario.', 'danger'); });
+        $('#logout-btn').on('click', () => { sessionStorage.clear(); location.reload(); });
+        $('#toggle-password').on('click', function() { const passwordInput = $('#password'), icon = $(this).find('i'); if (passwordInput.attr('type') === 'password') { passwordInput.attr('type', 'text'); icon.removeClass('bi-eye-slash-fill').addClass('bi-eye-fill'); } else { passwordInput.attr('type', 'password'); icon.removeClass('bi-eye-fill').addClass('bi-eye-slash-fill'); } });
+        $('#rut, #pharmacist-rut').on('input', function() { let { formatted } = formatAndValidateRut($(this).val()); $(this).val(formatted); });
+        
+        // --- INICIALIZACIÓN ---
+        function initApp() {
+            medicineModal = new bootstrap.Modal('#medicine-modal'); pharmacistModal = new bootstrap.Modal('#pharmacist-modal'); appToast = new bootstrap.Toast('#app-toast');
+            paymentModal = new bootstrap.Modal('#payment-modal'); invoiceModal = new bootstrap.Modal('#invoice-modal');
+            $('#user-greeting').text(`Hola, ${sessionStorage.getItem('loggedInUser')}`);
+            const welcomeMessage = sessionStorage.getItem('welcomeToast');
+            if(welcomeMessage){ showToast(welcomeMessage, 'info'); sessionStorage.removeItem('welcomeToast'); }
+            populateSelects(); initDB();
+            $('button[data-bs-toggle="pill"]').on('shown.bs.tab', e => { const target = $(e.target).data('bs-target'); if (target === '#v-pills-pos') displayPosProducts(); if (target === '#v-pills-sales-history') displaySalesHistory(); });
+        }
+        function populateSelects() {
+            const recipeSelect = $('#medicine-recipe').empty(); recipeTypes.forEach(type => recipeSelect.append(new Option(type, type)));
+            const routeSelect = $('#medicine-route').empty(); Object.keys(adminRoutes).forEach(group => { const optgroup = $(`<optgroup label="${group}"></optgroup>`); adminRoutes[group].forEach(route => optgroup.append(new Option(route, route))); routeSelect.append(optgroup); });
+            const countrySelect = $('#medicine-country').empty().append(new Option("Seleccione país...", ""));
+            Object.keys(countryToCodeMap).sort().forEach(country => countrySelect.append(new Option(country, country)));
+        }
+        function showToast(message, type = 'success') { const toastEl = $('#app-toast'); toastEl.removeClass('bg-success bg-danger bg-info').addClass(type === 'success' ? 'bg-success' : (type === 'danger' ? 'bg-danger' : 'bg-info')); $('#toast-body').text(message); appToast.show(); }
+        function updateSaleButtonState() { const isDisabled = pharmacistCount === 0; $('#process-sale-btn').prop('disabled', isDisabled).attr('title', isDisabled ? 'Debe registrar un vendedor.' : ''); $('#no-pharmacist-alert').toggleClass('d-none', !isDisabled); }
+        function populateSearchDatalist() { if (!db) return; const datalist = $('#medicine-list').empty(); db.transaction([MEDICINE_STORE]).objectStore(MEDICINE_STORE).openCursor().onsuccess = e => { const cursor = e.target.result; if (cursor) { datalist.append(`<option value="${cursor.value.name}">`); cursor.continue(); } }; }
+        
+        // --- INDEXEDDB ---
+        function initDB() {
+            const request = indexedDB.open(DB_NAME, DB_VERSION);
+            request.onerror = e => console.error("Error IndexedDB:", e.target.errorCode);
+            request.onsuccess = e => { db = e.target.result; if (sessionStorage.getItem('isLoggedIn') !== 'true') { checkIfUsersExist(); } else { populateSearchDatalist(); displayPosProducts(); displayMedicines(); displayPharmacists(); displaySalesHistory(); } };
+            request.onupgradeneeded = e => { db = e.target.result; if (!db.objectStoreNames.contains(MEDICINE_STORE)) db.createObjectStore(MEDICINE_STORE, { keyPath: 'id', autoIncrement: true }); if (!db.objectStoreNames.contains(PHARMACIST_STORE)) { const pharmacistStore = db.createObjectStore(PHARMACIST_STORE, { keyPath: 'id', autoIncrement: true }); pharmacistStore.createIndex('rut', 'rut', { unique: true }); } if (!db.objectStoreNames.contains(SALES_STORE)) { const salesStore = db.createObjectStore(SALES_STORE, { keyPath: 'id' }); salesStore.createIndex('date', 'date'); } };
+        }
+        function checkIfUsersExist() { const transaction = db.transaction([PHARMACIST_STORE], 'readonly'); const store = transaction.objectStore(PHARMACIST_STORE); const countRequest = store.count(); countRequest.onsuccess = () => { if (countRequest.result === 0) { $('#add-first-admin-btn').removeClass('d-none'); } }; }
+        $('#add-first-admin-btn').on('click', () => { if (confirm("Se creará un usuario administrador con RUT '11.111.111-1' y contraseña 'admin'. Deberá cambiar esta contraseña después de iniciar sesión.")) { const adminUser = { rut: '11.111.111-1', name: 'Admin', lastName: 'Principal', password: 'admin' }; const request = db.transaction([PHARMACIST_STORE], 'readwrite').objectStore(PHARMACIST_STORE).add(adminUser); request.onsuccess = () => { alert("Usuario administrador creado. Por favor, inicie sesión."); location.reload(); }; request.onerror = () => alert("Error al crear el usuario."); } });
+
+        // --- POS Y CARRITO ---
+        function displayPosProducts() {
+            if (!db) return; const productList = $('#pos-product-list').empty(); const searchTerm = $('#pos-search').val().toLowerCase(); const today = new Date(); const oneYearFromNow = new Date(new Date().setFullYear(today.getFullYear() + 1));
+            db.transaction([MEDICINE_STORE]).objectStore(MEDICINE_STORE).openCursor().onsuccess = e => {
+                const cursor = e.target.result; if (cursor) { const med = cursor.value; if (med.name.toLowerCase().includes(searchTerm)) {
+                    const isOutOfStock = med.stock <= 0; const imageSrc = med.image || 'https://via.placeholder.com/150x120/dee2e6/6c757d.png?text=N/A'; let expiryBadge = ''; const expiryDate = new Date(med.expiry);
+                    if (expiryDate > today && expiryDate <= oneYearFromNow) { expiryBadge = '<span class="expiry-badge" title="Próximo a Vencer">⚠️</span>'; }
+                    productList.append(`<div class="col"><div class="card h-100 pos-product-card ${isOutOfStock ? 'out-of-stock' : ''}" data-id="${med.id}">${expiryBadge}<img src="${imageSrc}" class="card-img-top" alt="${med.name}"><div class="card-body p-2"><h6 class="card-title small mb-1">${med.name}</h6><p class="card-text fw-bold mb-0">$${med.price.toFixed(0)}</p></div><span class="stock-badge badge bg-${isOutOfStock ? 'danger' : 'success'}">Stock: ${med.stock}</span></div></div>`);
+                } cursor.continue(); }
+            };
+        }
+        function addToCart(medicine) { const existingItem = posCart.find(item => item.id === medicine.id); if (existingItem) { if (existingItem.quantity < medicine.stock) existingItem.quantity++; else showToast(`Stock máximo para ${medicine.name}`, 'danger'); } else { posCart.push({ ...medicine, quantity: 1 }); } renderCart(); }
+        function renderCart() {
+            const cartItems = $('#pos-cart-items').empty(); let subtotal = 0;
+            if (posCart.length === 0) cartItems.append('<li class="list-group-item text-center text-muted">El carrito está vacío</li>');
+            else posCart.forEach((item, index) => {
+                const itemTotal = item.price * item.quantity; subtotal += itemTotal;
+                const countryCode = countryToCodeMap[item.country];
+                const flagHtml = countryCode ? `<img src="https://flagcdn.com/16x12/${countryCode}.png" class="me-2" alt="${item.country}">` : '';
+                cartItems.append(`<li class="list-group-item"><div class="d-flex justify-content-between align-items-center"><h6 class="my-0 small">${flagHtml}${item.name}</h6><span class="text-muted">$${itemTotal.toFixed(0)}</span></div><div class="d-flex justify-content-between align-items-center mt-2"><div class="input-group" style="width: 120px;"><button class="btn btn-outline-secondary btn-sm qty-btn" data-index="${index}" data-action="decrease">-</button><input type="text" class="form-control form-control-sm text-center" value="${item.quantity}" readonly><button class="btn btn-outline-secondary btn-sm qty-btn" data-index="${index}" data-action="increase">+</button></div><button class="btn btn-outline-danger btn-sm remove-item-btn" data-index="${index}"><i class="bi bi-trash"></i></button></div></li>`);
+            });
+            const tax = subtotal * 0.19, total = subtotal + tax; $('#pos-subtotal').text(`$${subtotal.toFixed(0)}`); $('#pos-tax').text(`$${tax.toFixed(0)}`); $('#pos-total').text(`$${total.toFixed(0)}`);
+        }
+        $('#pos-search').on('input', displayPosProducts);
+        $('#pos-product-list').on('click', '.pos-product-card:not(.out-of-stock)', function() { const id = parseInt($(this).data('id')); db.transaction([MEDICINE_STORE]).objectStore(MEDICINE_STORE).get(id).onsuccess = e => addToCart(e.target.result); });
+        $('#pos-cart-items').on('click', '.qty-btn', function() { const index = $(this).data('index'), action = $(this).data('action'), item = posCart[index]; if (action === 'increase' && item.quantity < item.stock) item.quantity++; else if (action === 'decrease' && item.quantity > 1) item.quantity--; renderCart(); });
+        $('#pos-cart-items').on('click', '.remove-item-btn', function() { posCart.splice($(this).data('index'), 1); renderCart(); });
+        $('#cancel-sale-btn').on('click', () => { if (confirm('¿Vaciar el carrito y cancelar la venta?')) { posCart = []; renderCart(); showToast('Venta cancelada.', 'info'); } });
+
+        // --- FLUJO DE PAGO Y BOLETA ---
+        $('#process-sale-btn').on('click', () => { if (posCart.length === 0) { showToast('El carrito está vacío.', 'danger'); return; } $('#payment-total-amount').text($('#pos-total').text()); resetPaymentModal(); populateSellerSelect(); paymentModal.show(); });
+        function resetPaymentModal() { selectedPaymentMethod = null; cashPaymentDetails = {}; $('#payment-options .btn').removeClass('active'); $('#cash-payment-section').addClass('d-none'); $('#cash-amount').val(''); $('#change-amount').text('$0.00'); $('#confirm-payment-btn').prop('disabled', true); }
+        function populateSellerSelect() { const select = $('#seller-select').empty().append(new Option("Seleccione un vendedor...", "")); db.transaction([PHARMACIST_STORE]).objectStore(PHARMACIST_STORE).openCursor().onsuccess = e => { const cursor = e.target.result; if (cursor) { const ph = cursor.value; select.append(new Option(`${ph.name} ${ph.lastName}`, `${ph.name} ${ph.lastName}`)); cursor.continue(); } }; }
+        $('#payment-options .btn').on('click', function() { selectedPaymentMethod = $(this).data('method'); $('#payment-options .btn').removeClass('active'); $(this).addClass('active'); $('#cash-payment-section').toggleClass('d-none', selectedPaymentMethod !== 'Efectivo'); validatePayment(); });
+        $('#cash-amount').on('input', function() { const total = parseFloat($('#pos-total').text().replace(/[^0-9.-]+/g,"")); const paid = parseFloat($(this).val()) || 0; const change = paid - total; $('#change-amount').text(`$${change >= 0 ? change.toFixed(0) : '0.00'}`); validatePayment(); });
+        $('#seller-select').on('change', validatePayment);
+        function validatePayment() { const total = parseFloat($('#pos-total').text().replace(/[^0-9.-]+/g,"")); const paid = parseFloat($('#cash-amount').val()) || 0; const seller = $('#seller-select').val(); let isValid = seller && selectedPaymentMethod; if (selectedPaymentMethod === 'Efectivo') isValid = isValid && paid >= total; $('#confirm-payment-btn').prop('disabled', !isValid); }
+        $('#confirm-payment-btn').on('click', function() {
+            const btn = $(this); const originalHTML = btn.find('.btn-text').html(); btn.addClass('processing').prop('disabled', true);
+            if(selectedPaymentMethod === 'Efectivo') { cashPaymentDetails.paid = parseFloat($('#cash-amount').val()); cashPaymentDetails.change = cashPaymentDetails.paid - parseFloat($('#pos-total').text().replace(/[^0-9.-]+/g,"")); }
+            const transaction = db.transaction([MEDICINE_STORE], 'readwrite'), store = transaction.objectStore(MEDICINE_STORE);
+            posCart.forEach(item => store.get(item.id).onsuccess = e => { const med = e.target.result; med.stock -= item.quantity; store.put(med); });
+            transaction.oncomplete = () => { saveSaleRecord().then(() => { paymentModal.hide(); btn.removeClass('processing').addClass('btn-success').html('<i class="bi bi-check-circle-fill"></i> Éxito'); setTimeout(() => { btn.removeClass('btn-success').html(`<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="btn-text">${originalHTML}</span>`); validatePayment(); }, 2000); showToast('¡Venta procesada!'); generateInvoice(); posCart = []; renderCart(); displayPosProducts(); displayMedicines(); displaySalesHistory(); }); };
+            transaction.onerror = () => { btn.removeClass('processing').addClass('btn-danger').html('<i class="bi bi-x-circle-fill"></i> Error'); setTimeout(() => { btn.removeClass('btn-danger').html(`<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span><span class="btn-text">${originalHTML}</span>`); validatePayment(); }, 2000); showToast('Error al procesar la venta.', 'danger'); };
+        });
+        function generateInvoice() { const now = new Date(), transactionId = Date.now(); $('#invoice-date').text(formatFullDate(now)); $('#invoice-tx-id').text(transactionId); $('#invoice-pharmacist').text($('#seller-select').val()); const invoiceItems = $('#invoice-items').empty(); posCart.forEach(item => invoiceItems.append(`<tr><td>${item.name}</td><td>${item.quantity}</td><td class="text-right">$${(item.price * item.quantity).toFixed(0)}</td></tr>`)); $('#invoice-subtotal').text($('#pos-subtotal').text()); $('#invoice-tax').text($('#pos-tax').text()); $('#invoice-total').text($('#pos-total').text()); $('#invoice-payment-method').text(selectedPaymentMethod); if(selectedPaymentMethod === 'Efectivo') { $('#invoice-cash-paid').text(`$${cashPaymentDetails.paid.toFixed(0)}`); $('#invoice-change').text(`$${cashPaymentDetails.change.toFixed(0)}`); $('#invoice-cash-details').removeClass('d-none'); } else { $('#invoice-cash-details').addClass('d-none'); } try { JsBarcode("#barcode", transactionId.toString(), { format: "CODE128", displayValue: false, height: 50, margin: 10 }); } catch (e) { console.error("Error Barcode:", e); } invoiceModal.show(); }
+        $('#print-invoice-btn').on('click', () => window.print());
+
+        // --- HISTORIAL DE VENTAS ---
+        function saveSaleRecord() { return new Promise((resolve, reject) => { const saleRecord = { id: Date.now(), date: new Date(), items: posCart, seller: $('#seller-select').val(), paymentMethod: selectedPaymentMethod, subtotal: parseFloat($('#pos-subtotal').text().replace(/[^0-9.-]+/g,"")), tax: parseFloat($('#pos-tax').text().replace(/[^0-9.-]+/g,"")), total: parseFloat($('#pos-total').text().replace(/[^0-9.-]+/g,"")), cashDetails: selectedPaymentMethod === 'Efectivo' ? cashPaymentDetails : null }; const tx = db.transaction([SALES_STORE], 'readwrite'); const store = tx.objectStore(SALES_STORE); store.add(saleRecord); tx.oncomplete = () => resolve(); tx.onerror = () => reject(); }); }
+        function displaySalesHistory() {
+            if (!db) return; const accordion = $('#sales-history-accordion').empty(); let salesFound = false;
+            const index = db.transaction([SALES_STORE], 'readonly').objectStore(SALES_STORE).index('date');
+            index.openCursor(null, 'prev').onsuccess = e => {
+                const cursor = e.target.result; if (cursor) { salesFound = true; const sale = cursor.value; let itemsHtml = '';
+                    sale.items.forEach(item => { itemsHtml += `<tr><td>${item.name}</td><td>${item.quantity}</td><td class="text-right">$${(item.price * item.quantity).toFixed(0)}</td></tr>`; });
+                    let paymentDetailsHtml = `<p class="mb-1"><strong>Método de Pago:</strong> ${sale.paymentMethod}</p>`; if (sale.paymentMethod === 'Efectivo' && sale.cashDetails) { paymentDetailsHtml += `<p class="mb-1"><strong>Pagado:</strong> $${sale.cashDetails.paid.toFixed(0)}</p><p class="mb-1"><strong>Vuelto:</strong> $${sale.cashDetails.change.toFixed(0)}</p>`; }
+                    const accordionItem = `<div class="accordion-item"><h2 class="accordion-header" id="heading-${sale.id}"><button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapse-${sale.id}"><div class="d-flex w-100 align-items-center flex-wrap gap-3"><strong class="me-auto">Venta #${sale.id}</strong><small class="text-muted">${formatFullDate(new Date(sale.date))}</small><span>${sale.seller}</span><strong>$${sale.total.toFixed(0)}</strong></div></button></h2><div id="collapse-${sale.id}" class="accordion-collapse collapse" data-bs-parent="#sales-history-accordion"><div class="accordion-body"><h6>Detalle de Productos</h6><table class="table table-sm"><thead><tr><th>Producto</th><th>Cant.</th><th class="text-right">Total</th></tr></thead><tbody>${itemsHtml}</tbody></table><hr><h6>Detalle de Pago</h6>${paymentDetailsHtml}</div></div></div>`;
+                    accordion.append(accordionItem); cursor.continue();
+                } else { $('#no-sales-message').toggleClass('d-none', salesFound); }
+            };
+        }
+
+        // --- CRUD INVENTARIO ---
+        function displayMedicines() {
+            if (!db) return; const tableBody = $('#medicines-table-body').empty(); const today = new Date(); const oneYearFromNow = new Date(new Date().setFullYear(today.getFullYear() + 1));
+            db.transaction([MEDICINE_STORE]).objectStore(MEDICINE_STORE).openCursor().onsuccess = e => {
+                const cursor = e.target.result; if (cursor) { const med = cursor.value; const stockClass = med.stock < 10 ? 'stock-low' : 'stock-normal'; const imageSrc = med.image || 'https://via.placeholder.com/50x50/dee2e6/6c757d.png?text=N/A'; const expiryDate = new Date(med.expiry); let expiryBadge = '';
+                    if (expiryDate < today) { expiryBadge = ' <span class="badge bg-danger">Vencido</span>'; } else if (expiryDate <= oneYearFromNow) { expiryBadge = ' <span class="badge bg-warning text-dark">Próximo a Vencer</span>'; }
+                    tableBody.append(`<tr><td><img src="${imageSrc}" class="table-img" alt="${med.name}"></td><td><strong>${med.name}</strong><br><small class="text-primary">${med.lab || ''} - ${med.country || ''}</small><br><small class="text-muted">Reg. San: ${med.sanitaryReg || 'N/A'}</small></td><td class="${stockClass}">${med.stock}</td><td>${med.recipeType}</td><td>${expiryDate.toLocaleDateString('es-ES')}${expiryBadge}</td><td>$${parseFloat(med.price).toFixed(0)}</td><td><button class="btn btn-sm btn-info edit-med-btn" data-id="${med.id}"><i class="bi bi-pencil-square"></i></button> <button class="btn btn-sm btn-danger delete-med-btn" data-id="${med.id}"><i class="bi bi-trash"></i></button></td></tr>`);
+                    cursor.continue();
+                }
+            };
+        }
+        $('#add-medicine-btn').on('click', () => { $('#medicine-form')[0].reset(); $('#medicine-id').val(''); $('#medicine-image-preview').removeAttr('src'); $('#medicine-modal-title').text('Añadir Medicamento'); medicineModal.show(); });
+        $('#medicine-image-input').on('change', function(e) { if (this.files && this.files[0]) { const reader = new FileReader(); reader.onload = (event) => $('#medicine-image-preview').attr('src', event.target.result); reader.readAsDataURL(this.files[0]); } });
+        $('#medicine-form').on('submit', function(e) {
+            e.preventDefault(); const id = $('#medicine-id').val();
+            const medData = { name: $('#medicine-name').val(), dosage: $('#medicine-dosage').val(), stock: parseInt($('#medicine-stock').val()), price: parseFloat($('#medicine-price').val()), expiry: $('#medicine-expiry').val(), lab: $('#medicine-lab').val(), country: $('#medicine-country').val(), sanitaryReg: $('#medicine-sanitary-reg').val(), recipeType: $('#medicine-recipe').val(), adminRoute: $('#medicine-route').val(), image: $('#medicine-image-preview').attr('src'), description: $('#medicine-description').val(), ram: $('#medicine-ram').val() };
+            const store = db.transaction([MEDICINE_STORE], 'readwrite').objectStore(MEDICINE_STORE);
+            const request = id ? store.put({ ...medData, id: parseInt(id) }) : store.add(medData);
+            request.onsuccess = () => { medicineModal.hide(); populateSearchDatalist(); displayMedicines(); displayPosProducts(); showToast(`Medicamento "${medData.name}" guardado.`); };
+            request.onerror = () => showToast('Error al guardar.', 'danger');
+        });
+        $('#medicines-table-body').on('click', '.edit-med-btn', function() {
+            const id = parseInt($(this).data('id')); db.transaction([MEDICINE_STORE]).objectStore(MEDICINE_STORE).get(id).onsuccess = e => {
+                const med = e.target.result;
+                $('#medicine-id').val(med.id); $('#medicine-name').val(med.name); $('#medicine-dosage').val(med.dosage); $('#medicine-stock').val(med.stock); $('#medicine-price').val(med.price); $('#medicine-expiry').val(med.expiry);
+                $('#medicine-lab').val(med.lab || ''); $('#medicine-country').val(med.country || ''); $('#medicine-sanitary-reg').val(med.sanitaryReg || '');
+                $('#medicine-recipe').val(med.recipeType); $('#medicine-route').val(med.adminRoute);
+                $('#medicine-image-preview').attr('src', med.image || ''); $('#medicine-description').val(med.description || ''); $('#medicine-ram').val(med.ram || '');
+                $('#medicine-modal-title').text('Editar Medicamento'); medicineModal.show();
+            };
+        });
+        $('#medicines-table-body').on('click', '.delete-med-btn', function() { if (confirm('¿Eliminar este medicamento?')) { const id = parseInt($(this).data('id')); db.transaction([MEDICINE_STORE], 'readwrite').objectStore(MEDICINE_STORE).delete(id).onsuccess = () => { populateSearchDatalist(); displayMedicines(); displayPosProducts(); showToast('Medicamento eliminado.'); }; } });
+
+        // --- CRUD FARMACÉUTICOS ---
+        function displayPharmacists() {
+            if (!db) return; const tableBody = $('#pharmacists-table-body').empty(); let count = 0;
+            db.transaction([PHARMACIST_STORE]).objectStore(PHARMACIST_STORE).openCursor().onsuccess = e => {
+                const cursor = e.target.result; if (cursor) {
+                    count++; const ph = cursor.value; tableBody.append(`<tr><td>${ph.id}</td><td>${ph.rut}</td><td>${ph.name}</td><td>${ph.lastName}</td><td><button class="btn btn-sm btn-info edit-ph-btn" data-id="${ph.id}"><i class="bi bi-pencil-square"></i></button> <button class="btn btn-sm btn-danger delete-ph-btn" data-id="${ph.id}"><i class="bi bi-trash"></i></button></td></tr>`);
+                    cursor.continue();
+                } else { pharmacistCount = count; updateSaleButtonState(); }
+            };
+        }
+        $('#add-pharmacist-btn').on('click', () => { $('#pharmacist-form')[0].reset(); $('#pharmacist-id').val(''); $('#pharmacist-password').prop('required', true).attr('placeholder', 'Contraseña'); $('#pharmacist-modal-title').text('Añadir Farmacéutico'); pharmacistModal.show(); });
+        $('#pharmacist-form').on('submit', function(e) {
+            e.preventDefault(); const rutInput = $('#pharmacist-rut').val(); const { isValid } = formatAndValidateRut(rutInput);
+            if (!isValid) { showToast('El RUT ingresado no es válido.', 'danger'); return; }
+            const id = $('#pharmacist-id').val(); const password = $('#pharmacist-password').val();
+            const phData = { rut: rutInput, name: capitalizeWords($('#pharmacist-name').val()), lastName: capitalizeWords($('#pharmacist-lastName').val()) };
+            const store = db.transaction([PHARMACIST_STORE], 'readwrite').objectStore(PHARMACIST_STORE);
+            if (id) {
+                const getRequest = store.get(parseInt(id));
+                getRequest.onsuccess = () => { const existingUser = getRequest.result; phData.password = password ? password : existingUser.password; phData.id = parseInt(id); const updateRequest = store.put(phData); updateRequest.onsuccess = () => { pharmacistModal.hide(); displayPharmacists(); showToast('Farmacéutico actualizado.'); }; updateRequest.onerror = () => showToast('Error al actualizar.', 'danger'); }
+            } else {
+                if (!password) { showToast('La contraseña es obligatoria para nuevos usuarios.', 'danger'); return; }
+                phData.password = password;
+                const addRequest = store.add(phData);
+                addRequest.onsuccess = () => { pharmacistModal.hide(); displayPharmacists(); showToast('Farmacéutico guardado.'); };
+                addRequest.onerror = () => showToast('Error al guardar. El RUT puede estar duplicado.', 'danger');
+            }
+        });
+        $('#pharmacists-table-body').on('click', '.edit-ph-btn', function() {
+            const id = parseInt($(this).data('id')); db.transaction([PHARMACIST_STORE]).objectStore(PHARMACIST_STORE).get(id).onsuccess = e => {
+                const ph = e.target.result; $('#pharmacist-id').val(ph.id); $('#pharmacist-rut').val(ph.rut); $('#pharmacist-name').val(ph.name); $('#pharmacist-lastName').val(ph.lastName);
+                $('#pharmacist-password').prop('required', false).val('').attr('placeholder', 'Dejar en blanco para no cambiar');
+                $('#pharmacist-modal-title').text('Editar Farmacéutico'); pharmacistModal.show();
+            };
+        });
+        $('#pharmacists-table-body').on('click', '.delete-ph-btn', function() {
+            if (confirm('¿Eliminar a este farmacéutico? Si es el único, no podrá iniciar sesión.')) {
+                const id = parseInt($(this).data('id')); db.transaction([PHARMACIST_STORE], 'readwrite').objectStore(PHARMACIST_STORE).delete(id).onsuccess = () => { displayPharmacists(); showToast('Farmacéutico eliminado.'); };
+            }
+        });
+    });
+    </script>
+</body>
+</html>
